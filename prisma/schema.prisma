@@ -1,0 +1,343 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// USER & AUTHENTICATION (better-auth)
+// ============================================
+
+model User {
+  id            String  @id @default(cuid())
+  email         String  @unique
+  emailVerified Boolean @default(false) @map("email_verified")
+  name          String?
+  image         String?
+
+  // Campos personalizados de la aplicación
+  role        UserRole  @default(READER)
+  locale      String    @default("es")
+  bio         String?
+  lastLoginAt DateTime? @map("last_login_at")
+
+  // Relaciones better-auth
+  accounts Account[]
+  sessions Session[]
+
+  // Relaciones de la aplicación
+  posts       Post[]
+  books       Book[]
+  purchases   Purchase[]
+  subscribers Subscriber[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+  SUBSCRIBER
+  READER
+}
+
+// better-auth Session model
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  token     String   @unique
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// better-auth Account model (para OAuth providers)
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String    @map("user_id")
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String? // OAuth scope
+  idToken               String?   @map("id_token")
+  password              String? // Para email/password auth
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+// Modelo de Verification (para verificación de email)
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([identifier, value])
+  @@map("verifications")
+}
+
+// ============================================
+// CONTENT MANAGEMENT
+// ============================================
+
+model Post {
+  id     String @id @default(cuid())
+  slug   String
+  locale String @default("es")
+
+  title       String
+  excerpt     String?
+  content     String  @db.Text
+  contentHtml String? @map("content_html") @db.Text
+  coverImage  String? @map("cover_image")
+
+  status      ContentStatus @default(DRAFT)
+  readingTime Int?          @map("reading_time")
+
+  authorId String @map("author_id")
+  author   User   @relation(fields: [authorId], references: [id])
+
+  categoryId String?   @map("category_id")
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  tags     PostTag[]
+  versions PostVersion[]
+
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@unique([slug, locale])
+  @@index([authorId])
+  @@index([categoryId])
+  @@index([status])
+  @@map("posts")
+}
+
+model PostVersion {
+  id     String @id @default(cuid())
+  postId String @map("post_id")
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  title      String
+  content    String  @db.Text
+  changeNote String? @map("change_note")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([postId])
+  @@map("post_versions")
+}
+
+enum ContentStatus {
+  DRAFT
+  READY
+  PUBLISHED
+  PREMIUM
+}
+
+// ============================================
+// BOOKS & CHAPTERS
+// ============================================
+
+model Book {
+  id     String @id @default(cuid())
+  slug   String
+  locale String @default("es")
+
+  title       String
+  description String? @db.Text
+  coverImage  String? @map("cover_image")
+
+  status ContentStatus @default(DRAFT)
+  price  Decimal?      @db.Decimal(10, 2)
+
+  authorId String @map("author_id")
+  author   User   @relation(fields: [authorId], references: [id])
+
+  chapters Chapter[]
+  products Product[]
+
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@unique([slug, locale])
+  @@index([authorId])
+  @@map("books")
+}
+
+model Chapter {
+  id     String @id @default(cuid())
+  bookId String @map("book_id")
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  order       Int
+  slug        String
+  title       String
+  content     String  @db.Text
+  contentHtml String? @map("content_html") @db.Text
+
+  status ContentStatus @default(DRAFT)
+  isFree Boolean       @default(false) @map("is_free")
+
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@unique([bookId, slug])
+  @@index([bookId])
+  @@map("chapters")
+}
+
+// ============================================
+// TAXONOMY
+// ============================================
+
+model Category {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  description String?
+
+  posts Post[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("categories")
+}
+
+model Tag {
+  id   String @id @default(cuid())
+  slug String @unique
+  name String
+
+  posts PostTag[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("tags")
+}
+
+model PostTag {
+  postId String @map("post_id")
+  tagId  String @map("tag_id")
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([postId, tagId])
+  @@map("post_tags")
+}
+
+// ============================================
+// PAYMENTS & PRODUCTS
+// ============================================
+
+model Product {
+  id          String  @id @default(cuid())
+  name        String
+  description String? @db.Text
+  price       Decimal @db.Decimal(10, 2)
+
+  type String // "post" | "book" | "subscription"
+
+  postId String? @map("post_id")
+  bookId String? @map("book_id")
+  book   Book?   @relation(fields: [bookId], references: [id])
+
+  externalId  String? @unique @map("external_id") // Stripe/LemonSqueezy ID
+  paymentLink String? @map("payment_link")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  purchases Purchase[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([type])
+  @@map("products")
+}
+
+model Purchase {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id])
+
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+
+  amount   Decimal @db.Decimal(10, 2)
+  currency String  @default("USD")
+
+  status PurchaseStatus @default(PENDING)
+
+  externalId String? @unique @map("external_id") // Stripe/LemonSqueezy transaction ID
+
+  purchasedAt DateTime @default(now()) @map("purchased_at")
+
+  @@index([userId])
+  @@index([productId])
+  @@index([status])
+  @@map("purchases")
+}
+
+enum PurchaseStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// ============================================
+// NEWSLETTER
+// ============================================
+
+model Subscriber {
+  id     String @id @default(cuid())
+  email  String @unique
+  locale String @default("es")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id])
+
+  subscribedAt DateTime @default(now()) @map("subscribed_at")
+
+  @@index([userId])
+  @@index([locale])
+  @@map("subscribers")
+}
